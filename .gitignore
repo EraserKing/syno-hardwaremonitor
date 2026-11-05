@@ -1,0 +1,12 @@
+# Build output (reproducible with ./build.sh)
+dist/
+*.spk
+
+# Collector runtime state
+*.state
+*.log
+
+# Python / editor / OS noise
+__pycache__/
+*.pyc
+.DS_Store

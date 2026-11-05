@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "Open HardwareMonitor from the DSM main menu. It is a desktop window, not a browser tab."
+exit 0

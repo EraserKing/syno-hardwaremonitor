@@ -1,0 +1,135 @@
+/* All rules are scoped to the HardwareMonitor window (class added at afterrender).
+   Do not add unscoped ExtJS selectors here: this file is loaded globally. */
+
+.hardwaremonitor-app .hardwaremonitor-body {
+  background: #f4f6f8;
+  color: #1c2430;
+  font: 13px/1.45 "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
+.hardwaremonitor-app .x-toolbar {
+  background: #f4f6f8;
+  border-color: #e6ebf1;
+  padding: 6px 8px;
+}
+
+/* The combo field is inside the window, so it can be scoped normally. */
+.hardwaremonitor-app .x-form-text {
+  box-sizing: border-box;
+  border: 1px solid #d5dde6;
+  border-radius: 8px 0 0 8px;
+  height: 28px;
+  line-height: 26px;
+  padding: 0 8px;
+  background: #fff;
+}
+.hardwaremonitor-app .x-form-trigger {
+  box-sizing: border-box;
+  border: 1px solid #d5dde6;
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background-color: #fff;
+  height: 28px;
+}
+
+/* The combo list is appended to <body>, outside the window. makeCombo() adds
+   hardwaremonitor-combo to listClass, so these rules touch only our dropdowns. */
+.hardwaremonitor-combo,
+.hardwaremonitor-combo .x-combo-list-inner {
+  background: #fff !important;
+  background-image: none !important;
+  opacity: 1 !important;
+  border: 1px solid #d5dde6 !important;
+  color: #17202a !important;
+}
+.hardwaremonitor-combo .x-combo-list-item {
+  background: #fff !important;
+  color: #17202a !important;
+  opacity: 1 !important;
+}
+.hardwaremonitor-combo .x-combo-selected,
+.hardwaremonitor-combo .x-combo-list-item.x-combo-selected {
+  background: #e7f1f8 !important;
+  color: #17202a !important;
+}
+
+.hardwaremonitor-app .hardwaremonitor { padding: 4px 16px 24px; }
+
+.hardwaremonitor-app .hardwaremonitor-host { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 6px; }
+.hardwaremonitor-app .hardwaremonitor-chip { display: inline-flex; align-items: baseline; gap: 8px; padding: 8px 12px; background: #fff; border: 1px solid #e6ebf1; border-radius: 999px; color: #1c2430; }
+.hardwaremonitor-app .hardwaremonitor-chip b { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #6d7b8a; font-weight: 700; }
+
+.hardwaremonitor-app .hardwaremonitor-loading,
+.hardwaremonitor-app .hardwaremonitor-err { margin: 16px; padding: 12px 14px; border-radius: 10px; }
+.hardwaremonitor-app .hardwaremonitor-err { background: #fdecea; color: #8d2f2f; }
+.hardwaremonitor-app .hardwaremonitor-banner { margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; background: #fff7e8; color: #8a5a00; }
+
+.hardwaremonitor-app .hardwaremonitor-rowtitle { margin: 16px 0 8px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #6d7b8a; }
+.hardwaremonitor-app .hardwaremonitor-row { display: grid; gap: 12px; }
+.hardwaremonitor-app .hardwaremonitor-row-cpu { grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1.2fr); }
+.hardwaremonitor-app .hardwaremonitor-row-fans,
+.hardwaremonitor-app .hardwaremonitor-row-disks { grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
+.hardwaremonitor-app .hardwaremonitor-row-gauges { grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
+
+.hardwaremonitor-app .hardwaremonitor-card { background: #fff; border: 1px solid #e6ebf1; border-radius: 14px; padding: 14px 16px 12px; box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); }
+.hardwaremonitor-app .hardwaremonitor-k { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #6d7b8a; font-weight: 700; }
+.hardwaremonitor-app .hardwaremonitor-v { margin: 8px 0 2px; font-size: 32px; line-height: 1; font-weight: 650; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.hardwaremonitor-app .hardwaremonitor-v span { margin-left: 4px; font-size: 14px; font-weight: 600; color: #6d7b8a; }
+.hardwaremonitor-app .hardwaremonitor-s { color: #6d7b8a; font-size: 12px; min-height: 1.2em; }
+.hardwaremonitor-app .hardwaremonitor-limit { margin-top: 8px; padding-top: 8px; border-top: 1px solid #eef2f6; color: #526070; font-size: 12px; font-variant-numeric: tabular-nums; }
+.hardwaremonitor-app .hardwaremonitor-card.cool .hardwaremonitor-v { color: #0f7a6c; }
+.hardwaremonitor-app .hardwaremonitor-card.warm .hardwaremonitor-v { color: #b26a00; }
+.hardwaremonitor-app .hardwaremonitor-card.hot .hardwaremonitor-v { color: #c2413b; }
+.hardwaremonitor-app .hardwaremonitor-card.muted .hardwaremonitor-v { color: #8b97a3; }
+
+.hardwaremonitor-app .hardwaremonitor-gauge-card { display: flex; flex-direction: column; }
+.hardwaremonitor-app .hardwaremonitor-gauge-card .hardwaremonitor-s,
+.hardwaremonitor-app .hardwaremonitor-gauge-card .hardwaremonitor-limit { text-align: center; }
+.hardwaremonitor-app .hardwaremonitor-gauge { position: relative; width: 76px; height: 76px; margin: 10px auto 4px; }
+.hardwaremonitor-app .hardwaremonitor-gauge svg { display: block; transform: rotate(-90deg); }
+.hardwaremonitor-app .hardwaremonitor-gauge-track,
+.hardwaremonitor-app .hardwaremonitor-gauge-fill { fill: none; stroke-width: 8; }
+.hardwaremonitor-app .hardwaremonitor-gauge-track { stroke: #e9eef3; }
+.hardwaremonitor-app .hardwaremonitor-gauge-fill { stroke: #0f7a6c; stroke-linecap: round; transition: stroke-dashoffset 0.35s ease, stroke 0.35s ease; }
+.hardwaremonitor-app .hardwaremonitor-gauge.warm .hardwaremonitor-gauge-fill { stroke: #d08a00; }
+.hardwaremonitor-app .hardwaremonitor-gauge.hot .hardwaremonitor-gauge-fill { stroke: #c2413b; }
+.hardwaremonitor-app .hardwaremonitor-gauge.muted .hardwaremonitor-gauge-fill { stroke: #8b97a3; }
+.hardwaremonitor-app .hardwaremonitor-gauge-center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.hardwaremonitor-app .hardwaremonitor-cores-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 10px; align-content: start; }
+.hardwaremonitor-app .hardwaremonitor-cores-grid .hardwaremonitor-card { padding: 12px 12px 10px; }
+.hardwaremonitor-app .hardwaremonitor-cores-grid .hardwaremonitor-v { font-size: 24px; }
+.hardwaremonitor-app .hardwaremonitor-cores-grid .hardwaremonitor-s { white-space: nowrap; }
+
+.hardwaremonitor-app .hardwaremonitor-group { margin-top: 18px; background: #fff; border: 1px solid #e6ebf1; border-radius: 14px; padding: 12px 12px 4px; }
+.hardwaremonitor-app .hardwaremonitor-group h2 { margin: 0 4px 8px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: #6d7b8a; }
+
+.hardwaremonitor-app .hardwaremonitor-table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse; }
+.hardwaremonitor-app .hardwaremonitor-table .c-name,
+.hardwaremonitor-app .hardwaremonitor-table th:nth-child(1),
+.hardwaremonitor-app .hardwaremonitor-table td:nth-child(1) { width: 22% !important; }
+.hardwaremonitor-app .hardwaremonitor-table .c-val,
+.hardwaremonitor-app .hardwaremonitor-table th:nth-child(2),
+.hardwaremonitor-app .hardwaremonitor-table td:nth-child(2) { width: 12% !important; }
+.hardwaremonitor-app .hardwaremonitor-table .c-min,
+.hardwaremonitor-app .hardwaremonitor-table th:nth-child(3),
+.hardwaremonitor-app .hardwaremonitor-table td:nth-child(3) { width: 10% !important; }
+.hardwaremonitor-app .hardwaremonitor-table .c-max,
+.hardwaremonitor-app .hardwaremonitor-table th:nth-child(4),
+.hardwaremonitor-app .hardwaremonitor-table td:nth-child(4) { width: 10% !important; }
+.hardwaremonitor-app .hardwaremonitor-table .c-src,
+.hardwaremonitor-app .hardwaremonitor-table th:nth-child(5),
+.hardwaremonitor-app .hardwaremonitor-table td:nth-child(5) { width: 16% !important; }
+.hardwaremonitor-app .hardwaremonitor-table .c-note,
+.hardwaremonitor-app .hardwaremonitor-table th:nth-child(6),
+.hardwaremonitor-app .hardwaremonitor-table td:nth-child(6) { width: 30% !important; }
+.hardwaremonitor-app .hardwaremonitor-table th,
+.hardwaremonitor-app .hardwaremonitor-table td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #eef2f6; vertical-align: top; overflow-wrap: anywhere; }
+.hardwaremonitor-app .hardwaremonitor-table th { color: #8b97a3; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.hardwaremonitor-app .hardwaremonitor-table td.num,
+.hardwaremonitor-app .hardwaremonitor-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.hardwaremonitor-app .hardwaremonitor-table tr.suspect td { color: #8a5a00; }
+.hardwaremonitor-app .hardwaremonitor-table tr.stopped td,
+.hardwaremonitor-app .hardwaremonitor-table tr.unavailable td,
+.hardwaremonitor-app .hardwaremonitor-table tr.not_exposed td,
+.hardwaremonitor-app .hardwaremonitor-table tr.dsm td { color: #8b97a3; }

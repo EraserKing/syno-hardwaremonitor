@@ -1,0 +1,52 @@
+#!/bin/sh
+# DSM calls this as the package user, not root.
+set -u
+
+PKGDEST=${SYNOPKG_PKGDEST:-}
+VAR=${SYNOPKG_PKGVAR:-/tmp/hardwaremonitor}
+PIDFILE="$VAR/collect.pid"
+LOG="$VAR/collect.log"
+
+alive() {
+    [ -f "$1" ] || return 1
+    kill -0 "$(cat "$1")" 2>/dev/null
+}
+
+start() {
+    mkdir -p "$VAR"
+    if alive "$PIDFILE"; then
+        exit 0
+    fi
+    : > "$LOG"
+    HARDWAREMONITOR_SNAPSHOT="$VAR/snapshot.json" \
+    HARDWAREMONITOR_STATE="$VAR/state" \
+        nohup "$PKGDEST/bin/collect.sh" --daemon >> "$LOG" 2>&1 &
+    echo $! > "$PIDFILE"
+    exit 0
+}
+
+stop() {
+    if alive "$PIDFILE"; then
+        kill "$(cat "$PIDFILE")" 2>/dev/null || true
+        sleep 1
+        if alive "$PIDFILE"; then
+            kill -9 "$(cat "$PIDFILE")" 2>/dev/null || true
+        fi
+    fi
+    rm -f "$PIDFILE"
+    exit 0
+}
+
+status() {
+    if alive "$PIDFILE"; then
+        exit 0
+    fi
+    exit 1
+}
+
+case ${1:-} in
+    start) start ;;
+    stop) stop ;;
+    status) status ;;
+    *) exit 1 ;;
+esac

@@ -1,0 +1,6 @@
+#!/bin/sh
+scripts=$(dirname "$SYNOPKG_PKGDEST")/scripts/start-stop-status
+if [ -x "$scripts" ]; then
+    "$scripts" stop || true
+fi
+exit 0

@@ -1,0 +1,22 @@
+{
+    "hardwaremonitor-ui.js": {
+        "SYNO.SDS.HardwareMonitor.Application": {
+            "type": "app",
+            "title": "HardwareMonitor",
+            "desc": "Fans, CPU temperature, clocks and power",
+            "icon": "images/icon_{0}.png",
+            "allUsers": true,
+            "allowMultiInstance": false,
+            "appWindow": "SYNO.SDS.HardwareMonitor.AppWindow",
+            "grantPrivilege": "all",
+            "advanceGrantPrivilege": true,
+            "depend": ["SYNO.SDS.HardwareMonitor.AppWindow"]
+        },
+        "SYNO.SDS.HardwareMonitor.AppWindow": {
+            "type": "lib",
+            "title": "HardwareMonitor",
+            "icon": "images/icon_{0}.png",
+            "depend": []
+        }
+    }
+}
