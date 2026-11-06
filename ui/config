@@ -3,7 +3,7 @@
         "SYNO.SDS.HardwareMonitor.Application": {
             "type": "app",
             "title": "HardwareMonitor",
-            "desc": "Fans, CPU temperature, clocks and power",
+            "desc": "Fans, CPU temperature, clocks, governor and power",
             "icon": "images/icon_{0}.png",
             "allUsers": true,
             "allowMultiInstance": false,

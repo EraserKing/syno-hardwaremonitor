@@ -12,6 +12,7 @@ Ext.define("SYNO.SDS.HardwareMonitor.AppWindow", {
     extend: "SYNO.SDS.AppWindow",
 
     SNAPSHOT: "/webman/3rdparty/hardwaremonitor/snapshot.cgi",
+    GOVERNOR: "/webman/3rdparty/hardwaremonitor/governor.cgi",
 
     FAN_LABELS: {
         quietfan: "Quiet",
@@ -107,6 +108,8 @@ Ext.define("SYNO.SDS.HardwareMonitor.AppWindow", {
                 {xtype: "tbtext", text: "Refresh"},
                 me.intervalCombo,
                 {xtype: "syno_button", text: "Refresh now", handler: function () { me.refreshNow(); }},
+                "-",
+                {xtype: "syno_button", text: "CPU governor", handler: function () { me.openGovernor(); }},
                 "->",
                 me.stampItem
             ],
@@ -649,11 +652,42 @@ Ext.define("SYNO.SDS.HardwareMonitor.AppWindow", {
         for (i = 0; i < cores.length; i++) {
             core = cores[i];
             mhz = this.coreClock(sensors, core);
-            sub = mhz ? mhz.value + " MHz" : (core.source || "");
+            sub = this.coreSub(core, mhz);
             html += this.card(core.label, core.value, "C", sub, this.tempTone(core.value));
         }
         html += "</div>";
         return html;
+    },
+
+    coreSub: function (core, mhz) {
+        var parts = [];
+        var gov = this.coreGovernor(core);
+        if (gov) {
+            parts.push(gov);
+        }
+        if (mhz) {
+            parts.push(mhz.value + " MHz");
+        }
+        if (!parts.length) {
+            parts.push(core.source || "");
+        }
+        return parts.join(" \u00b7 ");
+    },
+
+    coreGovernor: function (core) {
+        var g = this._data && this._data.governor;
+        var m = /(\d+)\s*$/.exec(String(core.label || ""));
+        var id, i;
+        if (!g || !g.cores || !m) {
+            return "";
+        }
+        id = "cpu" + m[1];
+        for (i = 0; i < g.cores.length; i++) {
+            if (g.cores[i].id === id) {
+                return g.cores[i].governor || "";
+            }
+        }
+        return "";
     },
 
     coreClock: function (sensors, core) {
@@ -978,6 +1012,236 @@ Ext.define("SYNO.SDS.HardwareMonitor.AppWindow", {
         me._lastModes = [];
         me.fanCombo.store.each(function (rec) {
             me._lastModes.push(rec.get("value"));
+        });
+    },
+
+    govStore: function (avail) {
+        var store = new Ext.data.SimpleStore({fields: ["value", "label"], data: []});
+        var data = [];
+        var i;
+        for (i = 0; i < (avail || []).length; i++) {
+            data.push([avail[i], avail[i]]);
+        }
+        store.loadData(data);
+        return store;
+    },
+
+    govCombo: function (store, admin, label) {
+        var combo = new Ext.form.ComboBox({
+            store: store,
+            displayField: "label",
+            valueField: "value",
+            mode: "local",
+            triggerAction: "all",
+            editable: false,
+            forceSelection: true,
+            fieldLabel: label || "",
+            labelWidth: 70,
+            anchor: "100%",
+            listClass: "x-combo-list hardwaremonitor-combo",
+            emptyText: "Choose a governor",
+            disabled: !admin
+        });
+        combo.on("expand", function () {
+            var list = combo.list;
+            var dom = list && (list.dom || (list.el && list.el.dom));
+            if (dom) {
+                Ext.fly(dom).addClass("hardwaremonitor-combo");
+            }
+        });
+        return combo;
+    },
+
+    loadGovernorState: function (cb) {
+        var me = this;
+        Ext.Ajax.request({
+            url: me.GOVERNOR,
+            method: "GET",
+            disableCaching: true,
+            success: function (resp) {
+                var data = null;
+                try {
+                    data = Ext.decode(resp.responseText);
+                } catch {
+                    data = null;
+                }
+                me._govState = data && data.success ? data : null;
+                if (cb) {
+                    cb(me._govState);
+                }
+            },
+            failure: function () {
+                me._govState = null;
+                if (cb) {
+                    cb(null);
+                }
+            }
+        });
+    },
+
+    openGovernor: function () {
+        var me = this;
+        me.loadGovernorState(function (state) {
+            if (!state) {
+                me.getMsgBox().alert("HardwareMonitor", "Could not read the CPU governor state.");
+                return;
+            }
+            if (!state.available || !state.available.length) {
+                me.getMsgBox().alert("HardwareMonitor", "This kernel does not report any cpufreq governors.");
+                return;
+            }
+            me.showGovernorWindow(state);
+        });
+    },
+
+    showGovernorWindow: function (state) {
+        var me = this;
+        var admin = !!state.admin;
+        var store = me.govStore(state.available || []);
+        var cores = state.cores || [];
+        var items = [];
+        var allCombo = me.govCombo(store, admin, "All cores");
+        var coreCombos = [];
+        var status = new Ext.Panel({
+            border: false,
+            anchor: "100%",
+            bodyStyle: "background:transparent;padding:0 0 10px;",
+            html: (state.driver ? "Driver: " + me.esc(state.driver) + ". " : "") + (admin
+                ? "Changes are applied immediately by a privileged helper and checked against the governors the kernel reports."
+                : "Read-only. Only DSM administrators can change the CPU governor.")
+        });
+        var i, combo;
+        var initial = (cores.length && cores[0].governor) || state.available[0] || "";
+        if (initial) {
+            allCombo.setValue(initial);
+        }
+
+        if (me._govWin) {
+            me._govWin.close();
+            me._govWin = null;
+        }
+
+        items.push(status);
+        items.push(allCombo);
+        items.push({
+            xtype: "syno_button",
+            text: "Apply to all cores",
+            disabled: !admin,
+            handler: function () {
+                var v = allCombo.getValue();
+                if (v) {
+                    me.applyGovernor({all: v}, status);
+                }
+            }
+        });
+        items.push({xtype: "box", autoEl: {tag: "hr"}, anchor: "100%"});
+
+        for (i = 0; i < cores.length; i++) {
+            combo = me.govCombo(store, admin, cores[i].id);
+            combo.setValue(cores[i].governor);
+            coreCombos.push({id: cores[i].id, combo: combo});
+            items.push(combo);
+        }
+        if (cores.length) {
+            items.push({
+                xtype: "syno_button",
+                text: "Apply per-core changes",
+                disabled: !admin,
+                handler: function () {
+                    var params = {};
+                    var j, v;
+                    for (j = 0; j < coreCombos.length; j++) {
+                        v = coreCombos[j].combo.getValue();
+                        if (v) {
+                            params[coreCombos[j].id] = v;
+                        }
+                    }
+                    me.applyGovernor(params, status);
+                }
+            });
+        }
+
+        me._govCombos = coreCombos;
+        me._govWin = new Ext.Window({
+            title: "CPU governor",
+            cls: "hardwaremonitor-app hardwaremonitor-dialog",
+            width: 460,
+            height: Math.min(640, 240 + cores.length * 36),
+            minHeight: 220,
+            resizable: false,
+            closable: true,
+            layout: "fit",
+            bodyStyle: "background:#fff;",
+            modal: true,
+            closeAction: "destroy",
+            listeners: {
+                close: function () {
+                    me._govWin = null;
+                }
+            },
+            items: [{
+                xtype: "form",
+                border: false,
+                autoScroll: cores.length > 8,
+                bodyStyle: "background:#fff;padding:14px;",
+                items: items
+            }]
+        });
+        me._govWin.show();
+    },
+
+    syncGovernorCombos: function (state) {
+        var cores = (state && state.cores) || [];
+        var combos = this._govCombos || [];
+        var i, j;
+        for (i = 0; i < combos.length; i++) {
+            for (j = 0; j < cores.length; j++) {
+                if (combos[i].id === cores[j].id) {
+                    combos[i].combo.setValue(cores[j].governor);
+                }
+            }
+        }
+    },
+
+    applyGovernor: function (params, status) {
+        var me = this;
+        Ext.Ajax.request({
+            url: me.GOVERNOR,
+            method: "POST",
+            params: Ext.apply({action: "set"}, params),
+            success: function (resp) {
+                var data = null;
+                try {
+                    data = Ext.decode(resp.responseText);
+                } catch {
+                    data = null;
+                }
+                if (!data || !data.success) {
+                    var msg = (data && (data.error || data.message)) || "Could not change the governor.";
+                    if (status && status.body) {
+                        status.body.update('<span class="hardwaremonitor-gov-bad">' + me.esc(msg) + "</span>");
+                    } else {
+                        me.getMsgBox().alert("HardwareMonitor", msg);
+                    }
+                    return;
+                }
+                var okMsg = data.message || ("Applied to " + data.applied + " core(s).");
+                if (status && status.body) {
+                    status.body.update('<span class="hardwaremonitor-gov-ok">' + me.esc(okMsg) + "</span>");
+                }
+                me.setStamp(okMsg);
+                Ext.defer(function () {
+                    me.loadGovernorState(function (state) {
+                        if (state) {
+                            me.syncGovernorCombos(state);
+                        }
+                    });
+                    me.loadSnapshot();
+                }, 300);
+            },
+            failure: function () {
+                me.getMsgBox().alert("HardwareMonitor", "Could not reach the governor endpoint.");
+            }
         });
     }
 });

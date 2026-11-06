@@ -1,5 +1,6 @@
 #!/bin/sh
-# DSM calls this as the package user, not root.
+# Runs as the package service account (conf/privilege run-as: package).
+# Governor writes go through the setuid helper, not this daemon.
 set -u
 
 PKGDEST=${SYNOPKG_PKGDEST:-}

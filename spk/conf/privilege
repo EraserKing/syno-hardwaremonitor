@@ -1,5 +1,13 @@
 {
   "defaults": {
     "run-as": "package"
-  }
+  },
+  "tool": [
+    {
+      "relpath": "bin/gov-helper",
+      "user": "root",
+      "group": "package",
+      "permission": "6550"
+    }
+  ]
 }

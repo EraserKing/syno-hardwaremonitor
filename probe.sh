@@ -98,7 +98,18 @@ echo "uid=$(id -u) user=$(id -un) groups=$(id -Gn 2>/dev/null)"
 if [ "$(id -u)" -eq 0 ]; then
     warn "running as root. This overstates what the package can read. Re-run as a normal user."
 fi
-echo "Package user will be sc-hardwaremonitor: not root, not in administrators."
+_priv=/var/packages/hardwaremonitor/conf/privilege
+if [ -r "$_priv" ]; then
+    echo "package_privilege=$(tr -d '\r\n ' < "$_priv" 2>/dev/null)"
+else
+    echo "package_privilege=not installed (ships run-as: package, with a setuid governor helper)"
+fi
+_helper=/var/packages/hardwaremonitor/target/bin/gov-helper
+if [ -e "$_helper" ]; then
+    echo "governor_helper=$(ls -ld "$_helper" 2>/dev/null | awk '{ print $1, $3 ":" $4 }')"
+else
+    echo "governor_helper=not installed"
+fi
 echo "not-world-read means the package cannot use that file."
 
 section "identity"

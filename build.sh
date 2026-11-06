@@ -5,10 +5,14 @@ cd "$(dirname "$0")"
 root=$(pwd)
 
 bump_version() {
-    _base=${1%-*}
-    _build=${1##*-}
+    case $1 in
+        *-*) _base=${1%-*}; _build=${1##*-} ;;
+        *) _base=$1; _build=0 ;;
+    esac
     _num=$(printf '%s' "$_build" | sed 's/^0*//')
-    [ -n "$_num" ] || _num=0
+    case $_num in
+        ""|*[!0-9]*) _num=0 ;;
+    esac
     _num=$((_num + 1))
     printf '%s-%04d' "$_base" "$_num"
 }
@@ -96,13 +100,23 @@ pkg="$stage/pkg"
 mkdir -p "$pkg/bin" "$pkg/ui"
 cp collect.sh "$pkg/bin/collect.sh"
 chmod 755 "$pkg/bin/collect.sh"
-cp ui/config ui/index.conf ui/style.css ui/snapshot.cgi "$pkg/ui/"
+# DSM 7 forbids run-as: root. The governor helper is a tiny freestanding
+# setuid binary; conf/privilege installs it root:<package-group> 6550.
+cc=${CC:-cc}
+command -v "$cc" >/dev/null 2>&1 || {
+    echo "build: $cc not found (needed to build the governor helper)" >&2
+    exit 1
+}
+"$cc" -nostdlib -static -no-pie -s -O2 -fno-builtin -Wall -Wextra \
+    -o "$pkg/bin/gov-helper" helper/gov-helper.c
+chmod 755 "$pkg/bin/gov-helper"
+cp ui/config ui/index.conf ui/style.css ui/snapshot.cgi ui/governor.cgi "$pkg/ui/"
 # Versioned module name and CSS query so upgrades bypass DSM/browser caches.
 sed -i "s/\"hardwaremonitor-ui[^\"]*\.js\"/\"hardwaremonitor-ui-$uiver.js\"/" "$pkg/ui/config"
 cp ui/hardwaremonitor-ui.js "$pkg/ui/hardwaremonitor-ui-$uiver.js"
 sed -i "s/style\.css?v=[0-9A-Za-z.-]*/style.css?v=$uiver/" "$pkg/ui/hardwaremonitor-ui-$uiver.js"
 cp -a ui/images "$pkg/ui/images"
-chmod 755 "$pkg/ui/snapshot.cgi"
+chmod 755 "$pkg/ui/snapshot.cgi" "$pkg/ui/governor.cgi"
 
 mkdir -p "$stage/scripts" "$stage/conf"
 sed "s/^version=.*/version=\"$pkgver\"/" spk/INFO > "$stage/INFO"

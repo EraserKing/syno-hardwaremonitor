@@ -89,9 +89,12 @@ printf '%s\n' 34000 > "$root/sys/class/thermal/thermal_zone0/temp"
 
 printf '%s\n' acpi-cpufreq > "$root/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver"
 printf '%s\n' performance > "$root/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+printf '%s\n' 'performance powersave schedutil' > "$root/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors"
 printf '%s\n' 3600061 > "$root/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
 printf '%s\n' 800000 > "$root/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq"
 printf '%s\n' 3600000 > "$root/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq"
+printf '%s\n' powersave > "$root/sys/devices/system/cpu/cpu1/cpufreq/scaling_governor"
+printf '%s\n' 'performance powersave schedutil' > "$root/sys/devices/system/cpu/cpu1/cpufreq/scaling_available_governors"
 printf '%s\n' 3599968 > "$root/sys/devices/system/cpu/cpu1/cpufreq/scaling_cur_freq"
 printf '%s\n' 800000 > "$root/sys/devices/system/cpu/cpu1/cpufreq/scaling_min_freq"
 printf '%s\n' 3600000 > "$root/sys/devices/system/cpu/cpu1/cpufreq/scaling_max_freq"
@@ -135,6 +138,13 @@ assert sensors["nct6793.in2"]["value"] == 3.408
 assert sensors["dsm.volt.VCC"]["value"] == 12.026
 assert sensors["cpu0.mhz"]["value"] == 3600
 assert sensors["cpu.governor"]["value"] == "performance"
+gov = data["governor"]
+assert gov["driver"] == "acpi-cpufreq", gov
+# The list comes from scaling_available_governors, in kernel order.
+assert gov["available"] == ["performance", "powersave", "schedutil"], gov["available"]
+assert [c["id"] for c in gov["cores"]] == ["cpu0", "cpu1"], gov["cores"]
+assert gov["cores"][0] == {"id": "cpu0", "governor": "performance", "min_mhz": 800, "max_mhz": 3600}, gov["cores"][0]
+assert gov["cores"][1] == {"id": "cpu1", "governor": "powersave", "min_mhz": 800, "max_mhz": 3600}, gov["cores"][1]
 assert sensors["cpu.package_power"]["quality"] == "not_exposed"
 assert sensors["cpu.package_power"]["value"] is None
 assert sensors["disk.sata1"]["value"] == 46
@@ -164,4 +174,126 @@ assert sensors["coretemp.temp1"]["min"] == 49.0
 assert sensors["coretemp.temp1"]["max"] == 51.0
 print("minmax ok")
 PY
+
+# governor.cgi: dynamic list, admin gate and the setuid helper path
+cgiroot=$(mktemp -d)
+helper=$(mktemp)
+trap 'rm -rf "$root" "$cgiroot"; rm -f "$helper"' EXIT
+cpubase="$cgiroot/sys/devices/system/cpu"
+mkdir -p "$cpubase/cpu0/cpufreq" "$cpubase/cpu1/cpufreq"
+for c in cpu0 cpu1; do
+    d="$cpubase/$c/cpufreq"
+    printf '%s\n' acpi-cpufreq > "$d/scaling_driver"
+    printf '%s\n' 'powersave performance schedutil' > "$d/scaling_available_governors"
+    printf '%s\n' 1600000 > "$d/cpuinfo_min_freq"
+    printf '%s\n' 3600000 > "$d/cpuinfo_max_freq"
+done
+printf '%s\n' performance > "$cpubase/cpu0/cpufreq/scaling_governor"
+printf '%s\n' powersave > "$cpubase/cpu1/cpufreq/scaling_governor"
+cat > "$cgiroot/auth" <<'EOF'
+#!/bin/sh
+id -un
+EOF
+chmod 755 "$cgiroot/auth"
+
+cc=${CC:-cc}
+"$cc" -nostdlib -static -no-pie -O2 -fno-builtin -Wall -Wextra \
+    -DGOV_HELPER_TEST -o "$helper" helper/gov-helper.c
+
+cgi() {
+    env HARDWAREMONITOR_PKG_ROOT="$cgiroot" \
+        HARDWAREMONITOR_CPU_BASE="$cpubase" \
+        HARDWAREMONITOR_AUTH_CGI="$cgiroot/auth" \
+        HARDWAREMONITOR_ADMIN_GID="${admin_gid:-99999}" \
+        HARDWAREMONITOR_HELPER="$helper" \
+        GOV_HELPER_ROOT="$cgiroot" \
+        REQUEST_METHOD="${method:-GET}" \
+        CONTENT_LENGTH="${len:-0}" \
+        HTTP_REFERER="${referer:-}" \
+        sh ./ui/governor.cgi | tail -n 1
+}
+
+cgi | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["success"] is True
+assert not d["admin"], d
+assert d["available"] == ["powersave", "performance", "schedutil"], d["available"]
+assert [c["id"] for c in d["cores"]] == ["cpu0", "cpu1"], d["cores"]
+assert d["cores"][0]["governor"] == "performance"
+assert d["cores"][1]["governor"] == "powersave"
+print("governor read ok")
+'
+
+admin_gid=$(id -g)
+method=POST
+body='action=set&all=powersave'
+len=${#body}
+printf '%s' "$body" | cgi | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["success"] is True and d["applied"] == 2 and d["failed"] == 0, d
+assert "powersave" in d["message"], d
+print("governor apply all ok")
+'
+[ "$(cat "$cpubase/cpu0/cpufreq/scaling_governor")" = powersave ]
+[ "$(cat "$cpubase/cpu1/cpufreq/scaling_governor")" = powersave ]
+
+body='action=set&cpu0=performance'
+len=${#body}
+printf '%s' "$body" | cgi | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["success"] is True and d["applied"] == 1 and d["failed"] == 0, d
+print("governor apply per-core ok")
+'
+[ "$(cat "$cpubase/cpu0/cpufreq/scaling_governor")" = performance ]
+[ "$(cat "$cpubase/cpu1/cpufreq/scaling_governor")" = powersave ]
+
+body='action=set&all=turbo'
+len=${#body}
+printf '%s' "$body" | cgi | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["success"] is False, d
+assert "no valid governor" in d["error"], d
+print("governor invalid value ok")
+'
+[ "$(cat "$cpubase/cpu0/cpufreq/scaling_governor")" = performance ]
+
+body='action=set&all=powersave'
+len=${#body}
+admin_gid=99999
+printf '%s' "$body" | cgi | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["success"] is False and "administrators only" in d["error"], d
+print("governor non-admin ok")
+'
+
+admin_gid=$(id -g)
+referer=http://evil.example/
+printf '%s' "$body" | cgi | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["success"] is False and "cross-origin" in d["error"], d
+print("governor csrf ok")
+'
+unset referer
+
+# The helper itself must reject traversal, injection and unknown governors.
+[ "$(GOV_HELPER_ROOT="$cgiroot" "$helper" cpu0 schedutil)" = "1 0" ]
+[ "$(cat "$cpubase/cpu0/cpufreq/scaling_governor")" = schedutil ]
+if GOV_HELPER_ROOT="$cgiroot" "$helper" 'cpu0/../../x' powersave 2>/dev/null; then
+    echo "helper accepted a traversal target" >&2
+    exit 1
+fi
+if GOV_HELPER_ROOT="$cgiroot" "$helper" cpu0 'powersave;rm' 2>/dev/null; then
+    echo "helper accepted an injected governor" >&2
+    exit 1
+fi
+[ "$(GOV_HELPER_ROOT="$cgiroot" "$helper" cpu0 turbo)" = "0 1" ]
+[ "$(cat "$cpubase/cpu0/cpufreq/scaling_governor")" = schedutil ]
+echo "governor helper validation ok"
+
 echo TEST_OK

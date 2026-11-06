@@ -1,6 +1,7 @@
 #!/bin/sh
 # Read-only sensor snapshot. Model-independent.
 # Never writes sysfs, never opens /dev/synobios, never sets fan mode.
+# Governor changes go through target/bin/gov-helper, not this collector.
 #
 # HARDWAREMONITOR_ROOT  prefix for a fixture (default: real root)
 # HARDWAREMONITOR_STATE min/max and RAPL sample file
@@ -276,6 +277,8 @@ walk_cpufreq() {
     [ -d "$_base" ] || return 0
     _drv=$(read1 "$_base/cpu0/cpufreq/scaling_driver")
     [ -n "$_drv" ] || _drv=cpufreq
+    printf 'GDRV\t%s\n' "$_drv" >> "$tsv"
+    _gavail=
     _gov=$(read1 "$_base/cpu0/cpufreq/scaling_governor")
     if [ -n "$_gov" ]; then
         add "cpu.governor" "cpu" "Governor" "$_gov" "" "$_drv" "ok" "" "" ""
@@ -298,6 +301,18 @@ walk_cpufreq() {
             _note="range ${_minmhz}-${_maxmhz} MHz"
         fi
         add "$_n.mhz" "cpu" "$_n clock" "$_mhz" "MHz" "$_drv" "ok" "$_note" "" ""
+        _cgov=$(read1 "$_c/cpufreq/scaling_governor")
+        printf 'GOV\t%s\t%s\t%s\t%s\n' "$_n" "$_cgov" "${_minmhz:-}" "${_maxmhz:-}" >> "$tsv"
+        # The governor list is whatever the kernel reports, never a fixed list.
+        for _g in $(read1 "$_c/cpufreq/scaling_available_governors"); do
+            case " $_gavail " in
+                *" $_g "*) ;;
+                *)
+                    _gavail="$_gavail $_g"
+                    printf 'GAVAIL\t%s\n' "$_g" >> "$tsv"
+                    ;;
+            esac
+        done
     done
 }
 
@@ -551,6 +566,23 @@ $1 == "S" {
     pct[n] = $12
     next
 }
+$1 == "GDRV" {
+    gdrv = $2
+    next
+}
+$1 == "GOV" {
+    gc++
+    gcid[gc] = $2
+    gcgov[gc] = $3
+    gcmin[gc] = $4
+    gcmax[gc] = $5
+    next
+}
+$1 == "GAVAIL" {
+    ga++
+    gavail[ga] = $2
+    next
+}
 $1 == "RAPL" {
     z = $2
     uj = $3 + 0
@@ -641,6 +673,24 @@ END {
     printf "    \"cpu\": %s,\n", jstr(cpu)
     printf "    \"cpus\": %s,\n", cpus+0
     printf "    \"arch\": %s\n", jstr(arch)
+    printf "  },\n"
+    printf "  \"governor\": {\n"
+    printf "    \"driver\": %s,\n", jstr(gdrv)
+    printf "    \"available\": ["
+    gsep2 = ""
+    for (gi = 1; gi <= ga; gi++) {
+        printf "%s%s", gsep2, jstr(gavail[gi])
+        gsep2 = ", "
+    }
+    printf "],\n"
+    printf "    \"cores\": ["
+    gsep2 = ""
+    for (gi = 1; gi <= gc; gi++) {
+        printf "%s\n      {\"id\": %s, \"governor\": %s, \"min_mhz\": %s, \"max_mhz\": %s}", gsep2, jstr(gcid[gi]), jstr(gcgov[gi]), jval(gcmin[gi]), jval(gcmax[gi])
+        gsep2 = ","
+    }
+    if (gc > 0) printf "\n    "
+    printf "]\n"
     printf "  },\n"
     printf "  \"profile_mismatch\": %s,\n", (mismatch ? "true" : "false")
     printf "  \"groups\": [\n"
