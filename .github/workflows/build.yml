@@ -1,0 +1,75 @@
+name: Build SPK
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version (leave empty to use spk/INFO)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # The governor helper is compiled for the build host, so this job is
+    # x86_64 only for now. For ARM, add a job with an aarch64 runner or a
+    # cross compiler and pass CC=... to build.sh.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          v="${INPUT_VERSION:-}"
+          if [ -z "$v" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            v="${GITHUB_REF_NAME#v}"
+          fi
+          if [ -z "$v" ]; then
+            v=$(sed -n 's/^version="\(.*\)"$/\1/p' spk/INFO)
+          fi
+          if [ -z "$v" ]; then
+            echo "could not determine package version" >&2
+            exit 1
+          fi
+          echo "value=$v" >> "$GITHUB_OUTPUT"
+          echo "Building version $v"
+
+      - name: Run tests
+        run: sh test.sh
+
+      - name: Build package
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: ./build.sh
+
+      - name: Upload SPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardwaremonitor-${{ steps.version.outputs.value }}
+          path: dist/*.spk
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.spk
+          generate_release_notes: true
