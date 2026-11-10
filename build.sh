@@ -100,6 +100,8 @@ pkg="$stage/pkg"
 mkdir -p "$pkg/bin" "$pkg/ui"
 cp collect.sh "$pkg/bin/collect.sh"
 chmod 755 "$pkg/bin/collect.sh"
+cp snapshot.sh "$pkg/bin/snapshot.sh"
+chmod 755 "$pkg/bin/snapshot.sh"
 # DSM 7 forbids run-as: root. The governor helper is a tiny freestanding
 # setuid binary; conf/privilege installs it root:<package-group> 6550.
 cc=${CC:-cc}

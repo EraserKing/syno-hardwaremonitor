@@ -190,6 +190,63 @@ assert sensors["sys.load"]["value"] == 0.5
 print("cpu util ok")
 PY
 
+# On-demand snapshot: tmpfs cache, TTL and lock
+pkgroot=$(mktemp -d)
+mkdir -p "$pkgroot/bin"
+cp ./collect.sh "$pkgroot/bin/collect.sh"
+cp ./snapshot.sh "$pkgroot/bin/snapshot.sh"
+chmod 755 "$pkgroot/bin/collect.sh" "$pkgroot/bin/snapshot.sh"
+shm=$(mktemp -d)
+
+snap() {
+    SYNOPKG_PKGDEST="$pkgroot" HARDWAREMONITOR_SHM="$shm/cache" \
+    HARDWAREMONITOR_TTL="${1:-1}" HARDWAREMONITOR_ROOT="$root" \
+    HARDWAREMONITOR_HOSTNAME=NAS sh "$pkgroot/bin/snapshot.sh"
+}
+
+snap > "$shm/first.json"
+printf '%s\n' 52000 > "$root/sys/class/hwmon/hwmon0/temp1_input"
+snap > "$shm/cached.json"
+snap 0 > "$shm/fresh.json"
+python3 - "$shm/first.json" "$shm/cached.json" "$shm/fresh.json" <<'PY'
+import json, sys
+def temp(path):
+    data = json.load(open(path))
+    return {s["id"]: s for g in data["groups"] for s in g["sensors"]}["coretemp.temp1"]["value"]
+assert temp(sys.argv[1]) == 51.0
+assert temp(sys.argv[2]) == 51.0, "TTL cache did not serve the previous sample"
+assert temp(sys.argv[3]) == 52.0, "TTL=0 did not collect a new sample"
+print("ondemand cache ok")
+PY
+
+# A held lock must not start a second collector; an existing snapshot is served.
+mkdir "$shm/cache/collect.lock"
+printf '%s\n' 53000 > "$root/sys/class/hwmon/hwmon0/temp1_input"
+snap 0 > "$shm/locked.json"
+python3 - "$shm/locked.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+s = {x["id"]: x for g in data["groups"] for x in g["sensors"]}
+assert s["coretemp.temp1"]["value"] == 52.0, "lock did not serve the cached sample"
+print("ondemand lock ok")
+PY
+rmdir "$shm/cache/collect.lock"
+
+# A stale /proc/stat sample must not report a bogus utilisation figure.
+printf 'stat\t100\t700\t1\n' > "$shm/cache/state"
+snap 0 > "$shm/warm.json"
+printf '%s\n' 'cpu  300 0 300 900 100 0 0 0 0 0' > "$root/proc/stat"
+snap 0 > "$shm/warm2.json"
+python3 - "$shm/warm.json" "$shm/warm2.json" <<'PY'
+import json, sys
+def ids(path):
+    data = json.load(open(path))
+    return {x["id"]: x for g in data["groups"] for x in g["sensors"]}
+assert "sys.cpu_util" not in ids(sys.argv[1]), "stale sample produced a utilisation figure"
+assert ids(sys.argv[2])["sys.cpu_util"]["value"] == 67, ids(sys.argv[2])["sys.cpu_util"]
+print("ondemand util warmup ok")
+PY
+
 # governor.cgi: dynamic list, admin gate and the setuid helper path
 cgiroot=$(mktemp -d)
 helper=$(mktemp)

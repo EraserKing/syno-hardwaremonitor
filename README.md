@@ -25,6 +25,8 @@ Author: **EraserKing**
 - Full sensor table with min/max, source, quality and notes.
 - Fan mode selector: Quiet, Cool, Full and, where supported, Quiet stop.
 - Adjustable refresh interval (1 s, 2 s, 5 s, 10 s, 30 s or off).
+- On-demand collection with a one-second tmpfs cache. No background process
+  runs while the window is closed, and the snapshot never touches the volume.
 
 ## Safety
 
@@ -73,7 +75,8 @@ the installed package privilege is set to.
 
 | Path | Purpose |
 |---|---|
-| `collect.sh` | Read-only sensor collector. Reads sysfs/proc/Synology files and writes a JSON snapshot. In `--daemon` mode it refreshes the snapshot and keeps a state file for min/max and RAPL energy deltas. |
+| `snapshot.sh` | On-demand entry point. Serves the cached JSON from tmpfs, runs `collect.sh` only when the sample is older than 1 s, and serialises concurrent requests with a lock. |
+| `collect.sh` | Read-only sensor collector. Reads sysfs/proc/Synology files and writes a JSON snapshot plus a small state file for min/max, RAPL deltas and `/proc/stat`. |
 | `ui/governor.cgi` | Admin-gated governor endpoint. GET returns driver, dynamic governor list and per-core state; POST validates a change and runs the setuid helper. It never writes sysfs itself. |
 | `helper/gov-helper.c` | Narrow setuid-root helper. Accepts `cpuN` plus one governor, verifies it against `scaling_available_governors`, and writes `scaling_governor`. Freestanding: no libc. |
 | `spk/conf/privilege` | Runs the package as its service account and installs `bin/gov-helper` as `root:<package-group>` mode `6550`. |
@@ -96,6 +99,26 @@ the installed package privilege is set to.
 - `/sys/class/net` — NIC link speed
 - `/usr/syno/etc/scemd.xml` — shutdown temperature thresholds
 
+## Refresh and caching
+
+There is no background collector. `snapshot.cgi` calls `snapshot.sh`, which:
+
+- serves `/dev/shm/hardwaremonitor/snapshot.json` when it is younger than 1 s;
+- otherwise takes a lock, runs `collect.sh`, replaces the file atomically, and
+  serves it.
+
+Cost follows demand: about one collection per second while a window is open,
+and zero when it is closed. The snapshot and its state file live in tmpfs, so
+nothing is written to the volume.
+
+Consequences of sampling only on demand:
+
+- min/max covers the lifetime of the tmpfs cache, i.e. since the package last
+  started or the NAS rebooted;
+- CPU utilisation needs two `/proc/stat` samples. After more than 10 s without
+  a request the first sample omits it and the next one is correct;
+- RAPL power appears on the second sample, for the same reason.
+
 ## Requirements
 
 - DSM 7.0 or newer.
@@ -115,10 +138,10 @@ The output is `dist/hardwaremonitor-<version>.spk`.
 The build compiles `helper/gov-helper.c` with the host C compiler (`CC` can
 override it) and packages it as `bin/gov-helper`. The helper is statically
 linked and freestanding, so it has no runtime libc version requirement. It
-currently supports x86_64 and aarch64; the build fails on any other
-architecture. `spk/INFO` declares the package `noarch`, so build on the same
-architecture as the NAS (or use a cross compiler) — otherwise the package
-installs but governor changes fail gracefully.
+supports x86_64 and aarch64; the build fails on any other architecture.
+`spk/INFO` declares `arch="x86_64"` because the shipped helper is built for
+x86_64. To target ARM, build on an aarch64 host (or with an aarch64 cross
+compiler) and change `arch` in `spk/INFO`.
 
 `spk/INFO` is the version source. Each build automatically increments the build
 number, writes it back to `spk/INFO`, and derives the versioned UI module name
@@ -167,8 +190,9 @@ scemd limits, load/memory) and asserts the generated JSON, including the
 `governor` object. It also compiles the helper in test mode and exercises
 `ui/governor.cgi` against a fixture: dynamic governor discovery, the
 administrator gate, apply-all, per-core changes, invalid values, cross-origin
-rejection, path traversal and shell injection. It never reads or writes the
-live machine.
+rejection, path traversal and shell injection. It also exercises the on-demand
+wrapper: cache reuse, TTL expiry, lock fallback and the `/proc/stat` warm-up
+rule. It never reads or writes the live machine.
 
 ## Probe
 

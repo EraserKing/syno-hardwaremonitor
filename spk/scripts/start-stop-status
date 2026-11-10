@@ -1,53 +1,28 @@
 #!/bin/sh
-# Runs as the package service account (conf/privilege run-as: package).
-# Governor writes go through the setuid helper, not this daemon.
+# No daemon: snapshot.cgi collects on demand into tmpfs.
+# This script only prepares and clears that cache.
 set -u
 
-PKGDEST=${SYNOPKG_PKGDEST:-}
-VAR=${SYNOPKG_PKGVAR:-/tmp/hardwaremonitor}
-PIDFILE="$VAR/collect.pid"
-LOG="$VAR/collect.log"
-
-alive() {
-    [ -f "$1" ] || return 1
-    kill -0 "$(cat "$1")" 2>/dev/null
-}
-
-start() {
-    mkdir -p "$VAR"
-    if alive "$PIDFILE"; then
-        exit 0
-    fi
-    : > "$LOG"
-    HARDWAREMONITOR_SNAPSHOT="$VAR/snapshot.json" \
-    HARDWAREMONITOR_STATE="$VAR/state" \
-        nohup "$PKGDEST/bin/collect.sh" --daemon >> "$LOG" 2>&1 &
-    echo $! > "$PIDFILE"
-    exit 0
-}
-
-stop() {
-    if alive "$PIDFILE"; then
-        kill "$(cat "$PIDFILE")" 2>/dev/null || true
-        sleep 1
-        if alive "$PIDFILE"; then
-            kill -9 "$(cat "$PIDFILE")" 2>/dev/null || true
-        fi
-    fi
-    rm -f "$PIDFILE"
-    exit 0
-}
-
-status() {
-    if alive "$PIDFILE"; then
-        exit 0
-    fi
-    exit 1
-}
+SHM=${HARDWAREMONITOR_SHM:-/dev/shm/hardwaremonitor}
+VAR=${SYNOPKG_PKGVAR:-/var/packages/hardwaremonitor/var}
 
 case ${1:-} in
-    start) start ;;
-    stop) stop ;;
-    status) status ;;
-    *) exit 1 ;;
+    start)
+        mkdir -p "$SHM" 2>/dev/null || true
+        rm -rf "$SHM/collect.lock" 2>/dev/null || true
+        # Drop the previous daemon's snapshot and pid file.
+        rm -f "$VAR/snapshot.json" "$VAR/state" "$VAR/collect.pid" \
+              "$VAR/collect.log" 2>/dev/null || true
+        exit 0
+        ;;
+    stop)
+        rm -rf "$SHM" 2>/dev/null || true
+        exit 0
+        ;;
+    status)
+        exit 0
+        ;;
+    *)
+        exit 1
+        ;;
 esac

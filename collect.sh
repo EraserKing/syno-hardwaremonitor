@@ -4,20 +4,10 @@
 # Governor changes go through target/bin/gov-helper, not this collector.
 #
 # HARDWAREMONITOR_ROOT  prefix for a fixture (default: real root)
-# HARDWAREMONITOR_STATE min/max and RAPL sample file
+# HARDWAREMONITOR_STATE min/max, RAPL and /proc/stat sample file
 # HARDWAREMONITOR_SNAPSHOT write JSON here (default: stdout)
 # HARDWAREMONITOR_HOSTNAME override hostname
 set -u
-
-if [ "${1:-}" = "--daemon" ]; then
-    interval=${HARDWAREMONITOR_INTERVAL:-1}
-    out=${HARDWAREMONITOR_SNAPSHOT:?set HARDWAREMONITOR_SNAPSHOT}
-    st=${HARDWAREMONITOR_STATE:-$out.state}
-    while true; do
-        HARDWAREMONITOR_SNAPSHOT="$out" HARDWAREMONITOR_STATE="$st" "$0" || true
-        sleep "$interval"
-    done
-fi
 
 root=${HARDWAREMONITOR_ROOT:-}
 state=${HARDWAREMONITOR_STATE:-}
@@ -582,6 +572,7 @@ BEGIN {
             else if (parts[1] == "stat") {
                 st_total = parts[2]
                 st_idle = parts[3]
+                st_time = parts[4]
             }
         }
         close(state)
@@ -609,7 +600,7 @@ $1 == "S" {
 $1 == "STAT" {
     cur_total = $2 + 0
     cur_idle = $3 + 0
-    if (st_total != "" && cur_total > st_total) {
+    if (st_total != "" && cur_total > st_total && (st_time == "" || (now - st_time) <= 10)) {
         dt = cur_total - st_total
         di = cur_idle - st_idle
         if (di < 0) di = 0
@@ -805,7 +796,7 @@ END {
         for (k in vmin) printf "min\t%s\t%s\n", k, vmin[k] > state_out
         for (k in vmax) printf "max\t%s\t%s\n", k, vmax[k] > state_out
         for (path in rnew_uj) printf "rapl\t%s\t%s\t%s\n", path, rnew_uj[path], rnew_t[path] > state_out
-        if (st_total != "") printf "stat\t%s\t%s\n", st_total, st_idle > state_out
+        if (st_total != "") printf "stat\t%s\t%s\t%s\n", st_total, st_idle, now > state_out
         close(state_out)
     }
 }
