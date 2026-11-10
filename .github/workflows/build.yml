@@ -67,9 +67,72 @@ jobs:
           path: dist/*.spk
           if-no-files-found: error
 
+      - name: Write package catalog
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          spk=$(ls dist/*.spk | head -n1)
+          python3 - "$spk" <<'PY'
+          import hashlib, json, os, sys
+          from pathlib import Path
+
+          spk = Path(sys.argv[1])
+          data = spk.read_bytes()
+          tag = os.environ["TAG"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          base = f"https://github.com/{repo}"
+
+          info = Path("spk/INFO").read_text().splitlines()
+          field = {}
+          for line in info:
+              if "=" in line and not line.lstrip().startswith("#"):
+                  key, value = line.split("=", 1)
+                  field[key.strip()] = value.strip().strip('"')
+          archs = (field.get("arch") or "noarch").split()
+
+          catalog = {
+              "packages": [
+                  {
+                      "package": "hardwaremonitor",
+                      "version": os.environ["VERSION"],
+                      "dname": "HardwareMonitor",
+                      "desc": (
+                          "Live fans, CPU temperature, clocks, governor "
+                          "and power. Fan mode uses DSM's API only."
+                      ),
+                      "maintainer": "EraserKing",
+                      "maintainer_url": base,
+                      "distributor": "EraserKing",
+                      "distributor_url": base,
+                      "start": False,
+                      "qstart": False,
+                      "qinst": True,
+                      "qupgrade": True,
+                      "archs": archs,
+                      "thumbnail": [
+                          f"{base}/raw/{tag}/ui/images/icon_256.png"
+                      ],
+                      "link": f"{base}/releases/download/{tag}/{spk.name}",
+                      "md5": hashlib.md5(data).hexdigest(),
+                      "sha256": hashlib.sha256(data).hexdigest(),
+                      "size": len(data),
+                  }
+              ]
+          }
+          out = Path("dist/packages.json")
+          out.write_text(json.dumps(catalog, indent=2) + "\n")
+          PY
+
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/*.spk
+          files: |
+            dist/*.spk
+            dist/packages.json
+            dist/PACKAGE_ICON_256.PNG
           generate_release_notes: true

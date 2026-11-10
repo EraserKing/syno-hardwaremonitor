@@ -128,5 +128,6 @@ tar -C "$pkg" -czf "$stage/package.tgz" .
 mkdir -p "$root/dist"
 spk="$root/dist/hardwaremonitor-$pkgver.spk"
 tar -C "$stage" -cf "$spk" INFO package.tgz scripts conf PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG
+cp "$stage/PACKAGE_ICON_256.PNG" "$root/dist/PACKAGE_ICON_256.PNG"
 echo "built $spk"
 ls -lh "$spk"

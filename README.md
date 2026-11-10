@@ -147,6 +147,15 @@ sudo synopkg start hardwaremonitor
 Open **HardwareMonitor** from the DSM main menu. It is a desktop window, not a browser
 tab.
 
+### Package source
+
+Instead of manual installs, Package Center can subscribe to a catalog hosted on
+Cloudflare. The release workflow attaches `packages.json` to each GitHub
+release. The source lives in
+[EraserKing/syno-packages](https://github.com/EraserKing/syno-packages); it
+merges the catalogs of every package repo it lists, so the same source can
+serve future packages and filters each package by architecture.
+
 ## Test
 
 ```sh
