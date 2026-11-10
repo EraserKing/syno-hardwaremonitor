@@ -35,6 +35,7 @@ model name	: Intel(R) Core(TM) i3-8100 CPU @ 3.60GHz
 cpu MHz		: 3599.988
 EOF
 printf '%s\n' '0.50 0.40 0.30 1/123 456' > "$root/proc/loadavg"
+printf '%s\n' 'cpu  100 0 100 700 100 0 0 0 0 0' > "$root/proc/stat"
 cat > "$root/proc/meminfo" <<'EOF'
 MemTotal:        8123456 kB
 MemAvailable:    4061728 kB
@@ -173,6 +174,20 @@ assert sensors["coretemp.temp1"]["value"] == 51.0
 assert sensors["coretemp.temp1"]["min"] == 49.0
 assert sensors["coretemp.temp1"]["max"] == 51.0
 print("minmax ok")
+PY
+
+# CPU utilisation from /proc/stat deltas, the figure DSM reports
+printf '%s\n' 'cpu  200 0 200 800 100 0 0 0 0 0' > "$root/proc/stat"
+HARDWAREMONITOR_ROOT="$root" HARDWAREMONITOR_STATE="$state" HARDWAREMONITOR_SNAPSHOT="$out" HARDWAREMONITOR_HOSTNAME=NAS \
+    sh ./collect.sh
+python3 - "$out" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+sensors = {s["id"]: s for g in data["groups"] for s in g["sensors"]}
+assert sensors["sys.cpu_util"]["value"] == 67, sensors["sys.cpu_util"]
+assert sensors["sys.cpu_util"]["unit"] == "%"
+assert sensors["sys.load"]["value"] == 0.5
+print("cpu util ok")
 PY
 
 # governor.cgi: dynamic list, admin gate and the setuid helper path

@@ -290,6 +290,18 @@ Ext.define("SYNO.SDS.HardwareMonitor.AppWindow", {
         return best || null;
     },
 
+    pickClockAvg: function (sensors) {
+        var i, s, sum = 0, count = 0;
+        for (i = 0; i < sensors.length; i++) {
+            s = sensors[i];
+            if (s.unit === "MHz" && this.isNum(s)) {
+                sum += Number(s.value);
+                count++;
+            }
+        }
+        return count ? Math.round(sum / count) : null;
+    },
+
     pickPower: function (sensors) {
         var i, s;
         for (i = 0; i < sensors.length; i++) {
@@ -561,7 +573,7 @@ Ext.define("SYNO.SDS.HardwareMonitor.AppWindow", {
         for (i = 0; i < list.length; i++) {
             s = list[i];
             pct = this.pctOf(s);
-            if (pct !== null && (s.id === "sys.load" || s.id === "sys.mem")) {
+            if (pct !== null && (s.id === "sys.cpu_util" || s.id === "sys.mem")) {
                 tone = pct >= 90 ? "hot" : pct >= 70 ? "warm" : "cool";
                 html += this.gaugeCard(s.label, pct, Math.round(pct) + "%", this.pctSub(s), tone);
             } else {
@@ -594,6 +606,10 @@ Ext.define("SYNO.SDS.HardwareMonitor.AppWindow", {
 
     pctSub: function (sensor) {
         var m, cores;
+        if (sensor.id === "sys.cpu_util") {
+            cores = Number(this._host && this._host.cpus) || 0;
+            return cores ? "busy time \u00b7 " + cores + " cores" : "busy time";
+        }
         if (sensor.id === "sys.mem") {
             m = /of ([0-9.]+) GiB/.exec(String(sensor.note || ""));
             if (m) {
@@ -612,14 +628,14 @@ Ext.define("SYNO.SDS.HardwareMonitor.AppWindow", {
     cpuRow: function (sensors) {
         var cpu = this.pickCpuTemp(sensors);
         var cores = this.pickCores(sensors, cpu);
-        var clock = this.pickClock(sensors);
+        var avg = this.pickClockAvg(sensors);
         var max = this.cpuMax(sensors, cpu);
         var pct = cpu && max ? Number(cpu.value) * 100 / max : 0;
         var tone = cpu ? this.tempTone(cpu.value) : "muted";
         var sub = cpu ? `${cpu.label} \u00b7 ${cpu.source}` : "No package sensor";
         var html;
-        if (clock) {
-            sub += ` \u00b7 ${clock.value} MHz`;
+        if (avg !== null) {
+            sub += ` \u00b7 ${avg} MHz avg`;
         }
         html = '<h2 class="hardwaremonitor-rowtitle">CPU</h2><div class="hardwaremonitor-row hardwaremonitor-row-cpu">';
         html += this.gaugeCard("Package", pct, cpu ? cpu.value + "\u00b0C" : "\u2014", sub, tone, max !== null ? "Max " + max + " \u00b0C" : this.limitLine(sensors, "cpu"));

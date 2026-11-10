@@ -279,6 +279,7 @@ walk_cpufreq() {
     [ -n "$_drv" ] || _drv=cpufreq
     printf 'GDRV\t%s\n' "$_drv" >> "$tsv"
     _gavail=
+    _cpuinfo=$(p /proc/cpuinfo)
     _gov=$(read1 "$_base/cpu0/cpufreq/scaling_governor")
     if [ -n "$_gov" ]; then
         add "cpu.governor" "cpu" "Governor" "$_gov" "" "$_drv" "ok" "" "" ""
@@ -289,8 +290,22 @@ walk_cpufreq() {
         case $_n in
             cpu*[!0-9]*) continue ;;
         esac
+        # scaling_cur_freq is what the driver requested, which sits at the max
+        # under the performance governor. /proc/cpuinfo reports the frequency
+        # measured from APERF/MPERF, so prefer it when the kernel provides it.
+        _act=$(awk -v c="$_n" '
+            /^processor[[:space:]]*:/ { p = $3 }
+            /^cpu MHz[[:space:]]*:/ { if (("cpu" p) == c) { printf "%.0f", $4; exit } }
+        ' "$_cpuinfo" 2>/dev/null || true)
         _cur=$(read1 "$_c/cpufreq/scaling_cur_freq")
         _mhz=$(scale_div "$_cur" 1000 "%.0f" 2>/dev/null || true)
+        _source=$_drv
+        _kind="driver request"
+        if [ -n "$_act" ] && [ "$_act" != "0" ]; then
+            _mhz=$_act
+            _source=cpuinfo
+            _kind="from /proc/cpuinfo"
+        fi
         [ -n "$_mhz" ] || continue
         _min=$(read1 "$_c/cpufreq/scaling_min_freq")
         _max=$(read1 "$_c/cpufreq/scaling_max_freq")
@@ -300,7 +315,12 @@ walk_cpufreq() {
         if [ -n "$_minmhz" ] && [ -n "$_maxmhz" ]; then
             _note="range ${_minmhz}-${_maxmhz} MHz"
         fi
-        add "$_n.mhz" "cpu" "$_n clock" "$_mhz" "MHz" "$_drv" "ok" "$_note" "" ""
+        if [ -n "$_note" ]; then
+            _note="$_note, $_kind"
+        else
+            _note=$_kind
+        fi
+        add "$_n.mhz" "cpu" "$_n clock" "$_mhz" "MHz" "$_source" "ok" "$_note" "" ""
         _cgov=$(read1 "$_c/cpufreq/scaling_governor")
         printf 'GOV\t%s\t%s\t%s\t%s\n' "$_n" "$_cgov" "${_minmhz:-}" "${_maxmhz:-}" >> "$tsv"
         # The governor list is whatever the kernel reports, never a fixed list.
@@ -337,15 +357,31 @@ walk_rapl() {
 
 walk_load() {
     _f=$(p /proc/loadavg)
-    [ -r "$_f" ] || return 0
-    set -- $(read1 "$_f")
-    [ -n "${1:-}" ] || return 0
-    # Load average as a percentage of the CPU count, so the UI can gauge it.
-    _pct=$(awk -v l="$1" -v n="${host_cpus:-0}" 'BEGIN {
-        if (n > 0) printf "%.0f", l * 100 / n
-        else print 0
+    if [ -r "$_f" ]; then
+        set -- $(read1 "$_f")
+        if [ -n "${1:-}" ]; then
+            # Load average is not CPU utilization. Keep it as its own figure.
+            _pct=$(awk -v l="$1" -v n="${host_cpus:-0}" 'BEGIN {
+                if (n > 0) printf "%.0f", l * 100 / n
+                else print 0
+            }')
+            add "sys.load" "system" "Load 1m" "$1" "" "proc" "ok" "5m ${2:-?}  15m ${3:-?}" "" "" "$_pct"
+        fi
+    fi
+    # CPU utilization is what DSM's Control Panel shows: busy jiffies between
+    # two samples. The awk stage turns the counters into a percentage.
+    _stat=$(p /proc/stat)
+    [ -r "$_stat" ] || return 0
+    _line=$(awk '$1 == "cpu" { print; exit }' "$_stat")
+    [ -n "$_line" ] || return 0
+    _vals=$(printf '%s\n' "$_line" | awk '{
+        total = 0
+        for (i = 2; i <= 9 && i <= NF; i++) total += $i
+        printf "%d %d", total, $5 + $6
     }')
-    add "sys.load" "system" "Load" "$1" "" "proc" "ok" "5m ${2:-?}  15m ${3:-?}" "" "" "$_pct"
+    set -- $_vals
+    [ -n "${1:-}" ] || return 0
+    printf 'STAT\t%s\t%s\n' "$1" "$2" >> "$tsv"
 }
 
 walk_mem() {
@@ -543,6 +579,10 @@ BEGIN {
                 rprev_uj[parts[2]] = parts[3]
                 rprev_t[parts[2]] = parts[4]
             }
+            else if (parts[1] == "stat") {
+                st_total = parts[2]
+                st_idle = parts[3]
+            }
         }
         close(state)
     }
@@ -564,6 +604,34 @@ $1 == "S" {
     limmax[n] = $10
     limcrit[n] = $11
     pct[n] = $12
+    next
+}
+$1 == "STAT" {
+    cur_total = $2 + 0
+    cur_idle = $3 + 0
+    if (st_total != "" && cur_total > st_total) {
+        dt = cur_total - st_total
+        di = cur_idle - st_idle
+        if (di < 0) di = 0
+        if (di > dt) di = dt
+        util = (dt - di) * 100 / dt
+        if (util < 0) util = 0
+        if (util > 100) util = 100
+        n++
+        id[n] = "sys.cpu_util"
+        group[n] = "system"
+        label[n] = "CPU"
+        value[n] = sprintf("%.0f", util)
+        unit[n] = "%"
+        source[n] = "proc/stat"
+        quality[n] = "ok"
+        note[n] = "busy jiffies since last sample"
+        limmax[n] = ""
+        limcrit[n] = ""
+        pct[n] = sprintf("%.0f", util)
+    }
+    st_total = cur_total
+    st_idle = cur_idle
     next
 }
 $1 == "GDRV" {
@@ -737,6 +805,7 @@ END {
         for (k in vmin) printf "min\t%s\t%s\n", k, vmin[k] > state_out
         for (k in vmax) printf "max\t%s\t%s\n", k, vmax[k] > state_out
         for (path in rnew_uj) printf "rapl\t%s\t%s\t%s\n", path, rnew_uj[path], rnew_t[path] > state_out
+        if (st_total != "") printf "stat\t%s\t%s\n", st_total, st_idle > state_out
         close(state_out)
     }
 }
